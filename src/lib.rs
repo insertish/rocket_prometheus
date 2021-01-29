@@ -115,10 +115,10 @@ use std::{env, time::Instant};
 use prometheus::{opts, Encoder, HistogramVec, IntCounterVec, Registry, TextEncoder};
 use rocket::{
     fairing::{Fairing, Info, Kind},
-    handler::Outcome,
+    handler::{Handler, Outcome},
     http::{ContentType, Method},
     response::Content,
-    Data, Handler, Request, Response, Route,
+    Data, Request, Response, Route
 };
 
 /// Re-export Prometheus so users can use it without having to explicitly
@@ -272,6 +272,7 @@ impl Default for PrometheusMetrics {
 #[derive(Copy, Clone)]
 struct TimerStart(Option<Instant>);
 
+#[rocket::async_trait]
 impl Fairing for PrometheusMetrics {
     fn info(&self) -> Info {
         Info {
@@ -280,11 +281,11 @@ impl Fairing for PrometheusMetrics {
         }
     }
 
-    fn on_request(&self, request: &mut Request, _: &Data) {
+    async fn on_request(&self, request: &mut Request<'_>, _: &mut Data) {
         request.local_cache(|| TimerStart(Some(Instant::now())));
     }
 
-    fn on_response(&self, request: &Request, response: &mut Response) {
+    async fn on_response<'r>(&self, request: &'r Request<'_>, response: &mut Response<'r>) {
         // Don't touch metrics if the request didn't match a route.
         if request.route().is_none() {
             return;
@@ -307,8 +308,9 @@ impl Fairing for PrometheusMetrics {
     }
 }
 
+#[rocket::async_trait]
 impl Handler for PrometheusMetrics {
-    fn handle<'r>(&self, req: &'r Request, _: Data) -> Outcome<'r> {
+    async fn handle<'r, 's: 'r>(&'s self, req: &'r Request<'_>, _: Data) -> Outcome<'r> {
         // Gather the metrics.
         let mut buffer = vec![];
         let encoder = TextEncoder::new();
